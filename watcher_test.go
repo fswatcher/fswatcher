@@ -309,9 +309,17 @@ func TestRemoveStopsEvents(t *testing.T) {
 }
 
 func TestCanonicalize(t *testing.T) {
-	cwd, err := os.Getwd()
+	rawCwd, err := os.Getwd()
 	if err != nil {
 		t.Fatalf("Getwd: %v", err)
+	}
+	// Route the expected value through canonicalize so the test follows
+	// the same EvalSymlinks pipeline as the implementation. Otherwise
+	// systems where the cwd traverses a symlink (FreeBSD /home →
+	// /usr/home, macOS /var → /private/var) report a spurious mismatch.
+	cwd, err := canonicalize(rawCwd)
+	if err != nil {
+		t.Fatalf("canonicalize(cwd): %v", err)
 	}
 
 	got, err := canonicalize(".")
