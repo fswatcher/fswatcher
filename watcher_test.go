@@ -503,9 +503,22 @@ func TestAddRecursiveExistingTree(t *testing.T) {
 		t.Fatalf("WriteFile: %v", err)
 	}
 
-	ev := waitOp(t, w, Write)
-	if ev.Name != target {
-		t.Errorf("Name = %q, want %q", ev.Name, target)
+	// Some backends (Windows ReadDirectoryChangesW with bWatchSubtree) may
+	// also fire Write events for intermediate directories. Wait specifically
+	// for the file we modified.
+	deadline := time.NewTimer(eventTimeout)
+	defer deadline.Stop()
+	for {
+		select {
+		case ev := <-w.Events:
+			if ev.Op.Has(Write) && ev.Name == target {
+				return
+			}
+		case err := <-w.Errors:
+			t.Fatalf("unexpected error: %v", err)
+		case <-deadline.C:
+			t.Fatalf("timeout waiting for Write on %q", target)
+		}
 	}
 }
 
