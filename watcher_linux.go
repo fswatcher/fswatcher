@@ -5,6 +5,7 @@ package fsnotify
 import (
 	"errors"
 	"fmt"
+	"io/fs"
 	"path/filepath"
 	"strings"
 	"sync"
@@ -28,9 +29,11 @@ type Watcher struct {
 }
 
 type linuxWatch struct {
-	abs string
-	wd  int32
-	op  Op
+	abs       string
+	wd        int32
+	op        Op
+	rootKey   string // pathKey of the user-Add'd root that owns this watch
+	recursive bool   // true only on the root entry of an AddRecursive call
 }
 
 // NewWatcher returns a Watcher backed by Linux inotify.
@@ -54,6 +57,18 @@ func NewWatcher() (*Watcher, error) {
 // Add registers path with the given event mask. Returns ErrAlreadyAdded
 // if path is already registered, or ErrClosed if the watcher is closed.
 func (w *Watcher) Add(path string, op Op) error {
+	return w.add(path, op, false)
+}
+
+// AddRecursive registers path and every directory below it. New
+// subdirectories created inside path are watched automatically; subtrees
+// that disappear are dropped via the kernel's IN_IGNORED notification.
+// Returns ErrAlreadyAdded if path is already registered.
+func (w *Watcher) AddRecursive(path string, op Op) error {
+	return w.add(path, op, true)
+}
+
+func (w *Watcher) add(path string, op Op, recursive bool) error {
 	if op == 0 {
 		op = All
 	}
@@ -71,17 +86,54 @@ func (w *Watcher) Add(path string, op Op) error {
 	if _, ok := w.watches[key]; ok {
 		return ErrAlreadyAdded
 	}
-	wd, err := syscall.InotifyAddWatch(w.fd, abs, opToMask(op))
-	if err != nil {
+	if _, err := w.addWatchLocked(abs, op, key, recursive); err != nil {
 		return fmt.Errorf("fsnotify: add %s: %w", abs, err)
 	}
-	wd32 := int32(wd)
-	w.watches[key] = &linuxWatch{abs: abs, wd: wd32, op: op}
-	w.wdToKey[wd32] = key
+	if recursive {
+		w.walkAndAddLocked(abs, op, key)
+	}
 	return nil
 }
 
-// Remove unregisters path. Returns ErrNotAdded if path is not registered.
+// addWatchLocked registers a single inotify watch and stores it.
+// Caller holds w.mu.
+func (w *Watcher) addWatchLocked(abs string, op Op, rootKey string, recursive bool) (*linuxWatch, error) {
+	wd, err := syscall.InotifyAddWatch(w.fd, abs, opToMask(op))
+	if err != nil {
+		return nil, err
+	}
+	wd32 := int32(wd)
+	lw := &linuxWatch{abs: abs, wd: wd32, op: op, rootKey: rootKey, recursive: recursive}
+	w.watches[pathKey(abs)] = lw
+	w.wdToKey[wd32] = pathKey(abs)
+	return lw, nil
+}
+
+// walkAndAddLocked walks root and adds an inotify watch for every
+// subdirectory. Best-effort: unreadable subtrees are skipped silently.
+// Caller holds w.mu.
+func (w *Watcher) walkAndAddLocked(root string, op Op, rootKey string) {
+	_ = filepath.WalkDir(root, func(p string, d fs.DirEntry, err error) error {
+		if err != nil {
+			return nil
+		}
+		if !d.IsDir() {
+			return nil
+		}
+		if pathKey(p) == rootKey {
+			return nil
+		}
+		if _, dup := w.watches[pathKey(p)]; dup {
+			return nil
+		}
+		_, _ = w.addWatchLocked(p, op, rootKey, false)
+		return nil
+	})
+}
+
+// Remove unregisters path. For an AddRecursive registration, every
+// descendant watch added on its behalf is dropped too. Returns
+// ErrNotAdded if path is not registered.
 func (w *Watcher) Remove(path string) error {
 	abs, err := canonicalize(path)
 	if err != nil {
@@ -94,15 +146,20 @@ func (w *Watcher) Remove(path string) error {
 	if w.closed {
 		return ErrClosed
 	}
-	lw, ok := w.watches[key]
-	if !ok {
+	if _, ok := w.watches[key]; !ok {
 		return ErrNotAdded
 	}
-	if _, err := syscall.InotifyRmWatch(w.fd, uint32(lw.wd)); err != nil {
-		return fmt.Errorf("fsnotify: remove %s: %w", abs, err)
+	var toRemove []*linuxWatch
+	for _, lw := range w.watches {
+		if lw.rootKey == key {
+			toRemove = append(toRemove, lw)
+		}
 	}
-	delete(w.watches, key)
-	delete(w.wdToKey, lw.wd)
+	for _, lw := range toRemove {
+		_, _ = syscall.InotifyRmWatch(w.fd, uint32(lw.wd))
+		delete(w.watches, pathKey(lw.abs))
+		delete(w.wdToKey, lw.wd)
+	}
 	return nil
 }
 
@@ -184,22 +241,45 @@ func (w *Watcher) dispatch(wd int32, mask uint32, name string) {
 	w.mu.Lock()
 	key, ok := w.wdToKey[wd]
 	var lw *linuxWatch
+	var recursive bool
+	var rootKey string
 	if ok {
 		lw = w.watches[key]
+		if lw != nil {
+			rootKey = lw.rootKey
+			if root := w.watches[lw.rootKey]; root != nil {
+				recursive = root.recursive
+			}
+		}
 	}
 	w.mu.Unlock()
 	if lw == nil {
 		return
 	}
 
-	op := maskToOp(mask) & lw.op
-	if op == 0 {
-		return
-	}
-
 	full := lw.abs
 	if name != "" {
 		full = filepath.Join(lw.abs, name)
+	}
+
+	// A new directory under a recursive root needs its own watch so we
+	// keep seeing events as the tree grows. Walk into it in case it
+	// already contains pre-existing children (e.g. it was renamed in).
+	if recursive && mask&syscall.IN_CREATE != 0 && mask&syscall.IN_ISDIR != 0 {
+		w.mu.Lock()
+		if !w.closed {
+			if _, exists := w.watches[pathKey(full)]; !exists {
+				if _, err := w.addWatchLocked(full, lw.op, rootKey, false); err == nil {
+					w.walkAndAddLocked(full, lw.op, rootKey)
+				}
+			}
+		}
+		w.mu.Unlock()
+	}
+
+	op := maskToOp(mask) & lw.op
+	if op == 0 {
+		return
 	}
 	select {
 	case w.Events <- Event{Name: full, Op: op}:

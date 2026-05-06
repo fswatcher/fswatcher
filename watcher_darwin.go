@@ -32,12 +32,13 @@ type Watcher struct {
 }
 
 type kqWatch struct {
-	fd       int
-	path     string
-	op       Op
-	isDir    bool
-	parent   *kqWatch
-	children map[string]*kqWatch
+	fd        int
+	path      string
+	op        Op
+	isDir     bool
+	recursive bool // true only on the user-Add'd root for AddRecursive
+	parent    *kqWatch
+	children  map[string]*kqWatch
 }
 
 // NewWatcher returns a Watcher backed by kqueue.
@@ -61,6 +62,18 @@ func NewWatcher() (*Watcher, error) {
 // Add registers path with the given event mask. Returns ErrAlreadyAdded
 // if path is already registered, or ErrClosed if the watcher is closed.
 func (w *Watcher) Add(path string, op Op) error {
+	return w.add(path, op, false)
+}
+
+// AddRecursive registers path and every directory below it. New
+// subdirectories created inside path are watched automatically; removed
+// subdirectories are dropped on NOTE_DELETE. Returns ErrAlreadyAdded
+// if path is already registered.
+func (w *Watcher) AddRecursive(path string, op Op) error {
+	return w.add(path, op, true)
+}
+
+func (w *Watcher) add(path string, op Op, recursive bool) error {
 	if op == 0 {
 		op = All
 	}
@@ -82,21 +95,33 @@ func (w *Watcher) Add(path string, op Op) error {
 	if err != nil {
 		return fmt.Errorf("fsnotify: add %s: %w", abs, err)
 	}
+	root.recursive = recursive
 	if root.isDir {
-		entries, err := os.ReadDir(abs)
-		if err == nil {
-			for _, e := range entries {
-				childPath := filepath.Join(abs, e.Name())
-				child, err := w.openLocked(childPath, op, root)
-				if err != nil {
-					continue
-				}
-				root.children[e.Name()] = child
-			}
-		}
+		w.populateChildrenLocked(root, recursive)
 	}
 	w.roots[key] = root
 	return nil
+}
+
+// populateChildrenLocked scans dir and registers a watch for every
+// immediate child. When recursive, descends into each child directory
+// so the entire subtree is covered. Caller holds w.mu.
+func (w *Watcher) populateChildrenLocked(dir *kqWatch, recursive bool) {
+	entries, err := os.ReadDir(dir.path)
+	if err != nil {
+		return
+	}
+	for _, e := range entries {
+		childPath := filepath.Join(dir.path, e.Name())
+		child, err := w.openLocked(childPath, dir.op, dir)
+		if err != nil {
+			continue
+		}
+		dir.children[e.Name()] = child
+		if recursive && child.isDir {
+			w.populateChildrenLocked(child, true)
+		}
+	}
 }
 
 // Remove unregisters path. Returns ErrNotAdded if path is not registered.
@@ -285,6 +310,11 @@ func (w *Watcher) diffDir(dir *kqWatch, requested Op) {
 		w.mu.Unlock()
 		return
 	}
+	root := dir
+	for root.parent != nil {
+		root = root.parent
+	}
+	recursive := root.recursive
 	for name := range current {
 		if _, ok := dir.children[name]; ok {
 			continue
@@ -296,6 +326,9 @@ func (w *Watcher) diffDir(dir *kqWatch, requested Op) {
 		}
 		dir.children[name] = child
 		added = append(added, childPath)
+		if recursive && child.isDir {
+			w.populateChildrenLocked(child, true)
+		}
 	}
 	w.mu.Unlock()
 

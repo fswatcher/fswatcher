@@ -50,6 +50,7 @@ type winWatch struct {
 	path       string
 	op         Op
 	mask       uint32
+	recursive  bool
 	buf        [watchBufferSize]byte
 	overlapped syscall.Overlapped
 }
@@ -74,6 +75,18 @@ func NewWatcher() (*Watcher, error) {
 // Add registers path with the given event mask. Returns ErrAlreadyAdded
 // if path is already registered, or ErrClosed if the watcher is closed.
 func (w *Watcher) Add(path string, op Op) error {
+	return w.add(path, op, false)
+}
+
+// AddRecursive registers path and every directory below it. Backed by
+// ReadDirectoryChangesW with bWatchSubtree, so new and removed
+// subdirectories are tracked by the kernel. Returns ErrAlreadyAdded
+// if path is already registered.
+func (w *Watcher) AddRecursive(path string, op Op) error {
+	return w.add(path, op, true)
+}
+
+func (w *Watcher) add(path string, op Op, recursive bool) error {
 	if op == 0 {
 		op = All
 	}
@@ -118,10 +131,11 @@ func (w *Watcher) Add(path string, op Op) error {
 	}
 
 	ww := &winWatch{
-		handle: handle,
-		path:   abs,
-		op:     op,
-		mask:   opToFilter(op),
+		handle:    handle,
+		path:      abs,
+		op:        op,
+		mask:      opToFilter(op),
+		recursive: recursive,
 	}
 	if err := ww.startRead(); err != nil {
 		syscall.CloseHandle(handle)
@@ -181,7 +195,7 @@ func (ww *winWatch) startRead() error {
 		ww.handle,
 		&ww.buf[0],
 		uint32(len(ww.buf)),
-		false,
+		ww.recursive,
 		ww.mask,
 		nil,
 		&ww.overlapped,

@@ -16,6 +16,9 @@ func NewWatcher() (*Watcher, error) {
 // Add returns ErrUnsupported.
 func (w *Watcher) Add(string, Op) error { return ErrUnsupported }
 
+// AddRecursive returns ErrUnsupported.
+func (w *Watcher) AddRecursive(string, Op) error { return ErrUnsupported }
+
 // Remove returns ErrUnsupported.
 func (w *Watcher) Remove(string) error { return ErrUnsupported }
 
