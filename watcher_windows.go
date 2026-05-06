@@ -4,6 +4,7 @@ package fsnotify
 
 import (
 	"errors"
+	"fmt"
 	"path/filepath"
 	"sync"
 	"syscall"
@@ -78,7 +79,7 @@ func (w *Watcher) Add(path string, op Op) error {
 	}
 	abs, err := canonicalize(path)
 	if err != nil {
-		return err
+		return fmt.Errorf("fsnotify: add %s: %w", path, err)
 	}
 	cmpKey := pathKey(abs)
 
@@ -95,7 +96,7 @@ func (w *Watcher) Add(path string, op Op) error {
 
 	pathPtr, err := syscall.UTF16PtrFromString(abs)
 	if err != nil {
-		return err
+		return fmt.Errorf("fsnotify: add %s: %w", abs, err)
 	}
 	handle, err := syscall.CreateFile(
 		pathPtr,
@@ -107,13 +108,13 @@ func (w *Watcher) Add(path string, op Op) error {
 		0,
 	)
 	if err != nil {
-		return err
+		return fmt.Errorf("fsnotify: add %s: %w", abs, err)
 	}
 	w.nextKey++
 	key := w.nextKey
 	if _, err := syscall.CreateIoCompletionPort(handle, w.port, key, 0); err != nil {
 		syscall.CloseHandle(handle)
-		return err
+		return fmt.Errorf("fsnotify: add %s: %w", abs, err)
 	}
 
 	ww := &winWatch{
@@ -124,7 +125,7 @@ func (w *Watcher) Add(path string, op Op) error {
 	}
 	if err := ww.startRead(); err != nil {
 		syscall.CloseHandle(handle)
-		return err
+		return fmt.Errorf("fsnotify: add %s: %w", abs, err)
 	}
 	w.watches[key] = ww
 	return nil
@@ -134,7 +135,7 @@ func (w *Watcher) Add(path string, op Op) error {
 func (w *Watcher) Remove(path string) error {
 	abs, err := canonicalize(path)
 	if err != nil {
-		return err
+		return fmt.Errorf("fsnotify: remove %s: %w", path, err)
 	}
 	cmpKey := pathKey(abs)
 
@@ -146,7 +147,10 @@ func (w *Watcher) Remove(path string) error {
 	for k, ww := range w.watches {
 		if pathKey(ww.path) == cmpKey {
 			delete(w.watches, k)
-			return syscall.CloseHandle(ww.handle)
+			if err := syscall.CloseHandle(ww.handle); err != nil {
+				return fmt.Errorf("fsnotify: remove %s: %w", abs, err)
+			}
+			return nil
 		}
 	}
 	return ErrNotAdded

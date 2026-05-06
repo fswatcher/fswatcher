@@ -4,6 +4,7 @@ package fsnotify
 
 import (
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"sync"
@@ -65,7 +66,7 @@ func (w *Watcher) Add(path string, op Op) error {
 	}
 	abs, err := canonicalize(path)
 	if err != nil {
-		return err
+		return fmt.Errorf("fsnotify: add %s: %w", path, err)
 	}
 	key := pathKey(abs)
 
@@ -79,7 +80,7 @@ func (w *Watcher) Add(path string, op Op) error {
 	}
 	root, err := w.openLocked(abs, op, nil)
 	if err != nil {
-		return err
+		return fmt.Errorf("fsnotify: add %s: %w", abs, err)
 	}
 	if root.isDir {
 		entries, err := os.ReadDir(abs)
@@ -102,7 +103,7 @@ func (w *Watcher) Add(path string, op Op) error {
 func (w *Watcher) Remove(path string) error {
 	abs, err := canonicalize(path)
 	if err != nil {
-		return err
+		return fmt.Errorf("fsnotify: remove %s: %w", path, err)
 	}
 	key := pathKey(abs)
 

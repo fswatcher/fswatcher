@@ -4,6 +4,7 @@ package fsnotify
 
 import (
 	"errors"
+	"fmt"
 	"path/filepath"
 	"strings"
 	"sync"
@@ -58,7 +59,7 @@ func (w *Watcher) Add(path string, op Op) error {
 	}
 	abs, err := canonicalize(path)
 	if err != nil {
-		return err
+		return fmt.Errorf("fsnotify: add %s: %w", path, err)
 	}
 	key := pathKey(abs)
 
@@ -72,7 +73,7 @@ func (w *Watcher) Add(path string, op Op) error {
 	}
 	wd, err := syscall.InotifyAddWatch(w.fd, abs, opToMask(op))
 	if err != nil {
-		return err
+		return fmt.Errorf("fsnotify: add %s: %w", abs, err)
 	}
 	wd32 := int32(wd)
 	w.watches[key] = &linuxWatch{abs: abs, wd: wd32, op: op}
@@ -84,7 +85,7 @@ func (w *Watcher) Add(path string, op Op) error {
 func (w *Watcher) Remove(path string) error {
 	abs, err := canonicalize(path)
 	if err != nil {
-		return err
+		return fmt.Errorf("fsnotify: remove %s: %w", path, err)
 	}
 	key := pathKey(abs)
 
@@ -98,7 +99,7 @@ func (w *Watcher) Remove(path string) error {
 		return ErrNotAdded
 	}
 	if _, err := syscall.InotifyRmWatch(w.fd, uint32(lw.wd)); err != nil {
-		return err
+		return fmt.Errorf("fsnotify: remove %s: %w", abs, err)
 	}
 	delete(w.watches, key)
 	delete(w.wdToKey, lw.wd)
