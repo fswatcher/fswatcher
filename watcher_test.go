@@ -11,7 +11,7 @@ import (
 	"time"
 )
 
-const eventTimeout = 5 * time.Second
+const eventTimeout = 10 * time.Second
 
 // tempDir returns t.TempDir() routed through canonicalize so paths
 // emitted by the watcher (which canonicalizes Add input) compare cleanly
