@@ -13,6 +13,19 @@ import (
 
 const eventTimeout = 5 * time.Second
 
+// tempDir returns t.TempDir() routed through canonicalize so paths
+// emitted by the watcher (which canonicalizes Add input) compare cleanly
+// against expected values regardless of platform-specific symlinks
+// (/var → /private/var on macOS) or 8.3 short forms on Windows.
+func tempDir(t *testing.T) string {
+	t.Helper()
+	d, err := canonicalize(t.TempDir())
+	if err != nil {
+		t.Fatalf("canonicalize TempDir: %v", err)
+	}
+	return d
+}
+
 func newWatcher(t *testing.T) *Watcher {
 	t.Helper()
 	w, err := NewWatcher()
@@ -45,7 +58,7 @@ func waitOp(t *testing.T, w *Watcher, want Op) Event {
 }
 
 func TestWatchCreate(t *testing.T) {
-	dir := t.TempDir()
+	dir := tempDir(t)
 	w := newWatcher(t)
 	if err := w.Add(dir, Create); err != nil {
 		t.Fatalf("Add: %v", err)
@@ -63,7 +76,7 @@ func TestWatchCreate(t *testing.T) {
 }
 
 func TestWatchWrite(t *testing.T) {
-	dir := t.TempDir()
+	dir := tempDir(t)
 	target := filepath.Join(dir, "a.txt")
 	if err := os.WriteFile(target, nil, 0o644); err != nil {
 		t.Fatalf("WriteFile: %v", err)
@@ -85,7 +98,7 @@ func TestWatchWrite(t *testing.T) {
 }
 
 func TestWatchRemove(t *testing.T) {
-	dir := t.TempDir()
+	dir := tempDir(t)
 	target := filepath.Join(dir, "a.txt")
 	if err := os.WriteFile(target, nil, 0o644); err != nil {
 		t.Fatalf("WriteFile: %v", err)
@@ -107,7 +120,7 @@ func TestWatchRemove(t *testing.T) {
 }
 
 func TestAddDuplicate(t *testing.T) {
-	dir := t.TempDir()
+	dir := tempDir(t)
 	w := newWatcher(t)
 	if err := w.Add(dir, All); err != nil {
 		t.Fatalf("Add: %v", err)
@@ -118,7 +131,7 @@ func TestAddDuplicate(t *testing.T) {
 }
 
 func TestRemoveUnregistered(t *testing.T) {
-	dir := t.TempDir()
+	dir := tempDir(t)
 	w := newWatcher(t)
 	if err := w.Remove(dir); !errors.Is(err, ErrNotAdded) {
 		t.Fatalf("Remove(missing) = %v, want ErrNotAdded", err)
@@ -156,7 +169,7 @@ func TestClosedWatcher(t *testing.T) {
 }
 
 func TestOpFilterIgnoresOthers(t *testing.T) {
-	dir := t.TempDir()
+	dir := tempDir(t)
 	w := newWatcher(t)
 	if err := w.Add(dir, Create); err != nil {
 		t.Fatalf("Add: %v", err)
@@ -187,7 +200,7 @@ func TestOpFilterIgnoresOthers(t *testing.T) {
 }
 
 func TestWatchRename(t *testing.T) {
-	dir := t.TempDir()
+	dir := tempDir(t)
 	oldPath := filepath.Join(dir, "old.txt")
 	newPath := filepath.Join(dir, "new.txt")
 	if err := os.WriteFile(oldPath, nil, 0o644); err != nil {
@@ -210,7 +223,7 @@ func TestWatchRename(t *testing.T) {
 }
 
 func TestWatchChmod(t *testing.T) {
-	dir := t.TempDir()
+	dir := tempDir(t)
 	target := filepath.Join(dir, "a.txt")
 	if err := os.WriteFile(target, nil, 0o644); err != nil {
 		t.Fatalf("WriteFile: %v", err)
@@ -234,8 +247,8 @@ func TestWatchChmod(t *testing.T) {
 }
 
 func TestMultiplePaths(t *testing.T) {
-	dirA := t.TempDir()
-	dirB := t.TempDir()
+	dirA := tempDir(t)
+	dirB := tempDir(t)
 
 	w := newWatcher(t)
 	if err := w.Add(dirA, Create); err != nil {
@@ -273,7 +286,7 @@ func TestMultiplePaths(t *testing.T) {
 }
 
 func TestRemoveStopsEvents(t *testing.T) {
-	dir := t.TempDir()
+	dir := tempDir(t)
 	w := newWatcher(t)
 	if err := w.Add(dir, Create); err != nil {
 		t.Fatalf("Add: %v", err)
@@ -320,7 +333,7 @@ func TestCanonicalize(t *testing.T) {
 }
 
 func TestAddRelativePath(t *testing.T) {
-	dir := t.TempDir()
+	dir := tempDir(t)
 	parent := filepath.Dir(dir)
 	base := filepath.Base(dir)
 
@@ -350,7 +363,7 @@ func TestAddRelativePath(t *testing.T) {
 }
 
 func TestAddDuplicateAcrossForms(t *testing.T) {
-	dir := t.TempDir()
+	dir := tempDir(t)
 	w := newWatcher(t)
 	if err := w.Add(dir, All); err != nil {
 		t.Fatalf("Add: %v", err)
@@ -428,7 +441,7 @@ func TestAddCaseInsensitiveOnWindows(t *testing.T) {
 	if runtime.GOOS != "windows" {
 		t.Skip("Windows-only")
 	}
-	dir := t.TempDir()
+	dir := tempDir(t)
 	w := newWatcher(t)
 	if err := w.Add(dir, All); err != nil {
 		t.Fatalf("Add: %v", err)
@@ -449,7 +462,7 @@ func TestConcurrentAddClose(t *testing.T) {
 		if err != nil {
 			t.Fatalf("NewWatcher: %v", err)
 		}
-		dir := t.TempDir()
+		dir := tempDir(t)
 
 		var wg sync.WaitGroup
 		wg.Add(2)

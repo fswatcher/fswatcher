@@ -9,7 +9,12 @@ import (
 )
 
 func TestCanonicalizeExpandsShortPath(t *testing.T) {
-	long := t.TempDir()
+	// t.TempDir() may already mix 8.3 and long components on CI runners,
+	// so fully canonicalize first to get the expected long form.
+	long, err := canonicalize(t.TempDir())
+	if err != nil {
+		t.Fatalf("canonicalize(TempDir): %v", err)
+	}
 
 	longPtr, err := syscall.UTF16PtrFromString(long)
 	if err != nil {
