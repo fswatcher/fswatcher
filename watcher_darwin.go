@@ -4,6 +4,7 @@ package fsnotify
 
 import (
 	"fmt"
+	"os"
 	"path/filepath"
 	"strings"
 	"sync"
@@ -128,6 +129,7 @@ type fseReg struct {
 	path      string
 	op        Op
 	recursive bool
+	isDir     bool
 }
 
 // fsStream represents a single FSEventStream for one Add/AddRecursive call.
@@ -136,6 +138,7 @@ type fsStream struct {
 	path      string
 	op        Op
 	recursive bool
+	isDir     bool
 }
 
 // Watcher monitors registered paths via macOS FSEvents.
@@ -264,6 +267,11 @@ func (w *Watcher) add(path string, op Op, recursive bool) error {
 	}
 	key := pathKey(abs)
 
+	isDir := false
+	if fi, err := os.Stat(abs); err == nil {
+		isDir = fi.IsDir()
+	}
+
 	w.mu.Lock()
 	defer w.mu.Unlock()
 	if w.closed {
@@ -282,6 +290,7 @@ func (w *Watcher) add(path string, op Op, recursive bool) error {
 		path:      abs,
 		op:        op,
 		recursive: recursive,
+		isDir:     isDir,
 	}
 	return nil
 }
@@ -399,6 +408,7 @@ func handleFSEventsCallback(clientInfo uintptr, n int, pathsPtr, flagsPtr unsafe
 			path:      fs.path,
 			op:        fs.op,
 			recursive: fs.recursive,
+			isDir:     fs.isDir,
 		})
 	}
 	w.mu.Unlock()
@@ -454,9 +464,9 @@ func handleFSEventsCallback(clientInfo uintptr, n int, pathsPtr, flagsPtr unsafe
 			continue
 		}
 
-		// Suppress events for the watched root — its metadata changes
-		// are noise. Child events pass through.
-		if p == r.path {
+		// Suppress events for the watched root directory — its metadata
+		// changes are noise. File watches must not be suppressed.
+		if r.isDir && p == r.path {
 			continue
 		}
 		if !r.recursive {
