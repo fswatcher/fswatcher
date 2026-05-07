@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.0.4] - 2026-05-07
+
 ### Added
 - FreeBSD support based on the darwin kqueue backend (#5)
 - FreeBSD CI job via `vmactions/freebsd-vm`
@@ -77,7 +79,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 - Tighten the `Chmod` test for Windows
 - Canonicalize temp directories in tests for cross-platform stability
 
-[Unreleased]: https://github.com/gofsnotify/fsnotify/compare/v0.0.3...HEAD
+[Unreleased]: https://github.com/gofsnotify/fsnotify/compare/v0.0.4...HEAD
+[0.0.4]: https://github.com/gofsnotify/fsnotify/compare/v0.0.3...v0.0.4
 [0.0.3]: https://github.com/gofsnotify/fsnotify/compare/v0.0.2...v0.0.3
 [0.0.2]: https://github.com/gofsnotify/fsnotify/compare/v0.0.1...v0.0.2
 [0.0.1]: https://github.com/gofsnotify/fsnotify/releases/tag/v0.0.1
