@@ -97,6 +97,31 @@ func TestWatchWrite(t *testing.T) {
 	}
 }
 
+func TestWatchFileWrite(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("Windows ReadDirectoryChangesW only supports directories")
+	}
+	dir := tempDir(t)
+	target := filepath.Join(dir, "a.txt")
+	if err := os.WriteFile(target, nil, 0o644); err != nil {
+		t.Fatalf("WriteFile: %v", err)
+	}
+
+	w := newWatcher(t)
+	if err := w.Add(target, Write); err != nil {
+		t.Fatalf("Add(file): %v", err)
+	}
+
+	if err := os.WriteFile(target, []byte("changed"), 0o644); err != nil {
+		t.Fatalf("WriteFile: %v", err)
+	}
+
+	ev := waitOp(t, w, Write)
+	if ev.Name != target {
+		t.Errorf("Name = %q, want %q", ev.Name, target)
+	}
+}
+
 func TestWatchRemove(t *testing.T) {
 	dir := tempDir(t)
 	target := filepath.Join(dir, "a.txt")
