@@ -26,9 +26,9 @@ const (
 // All is the union of every supported Op bit.
 const All = Create | Write | Remove | Rename | Chmod
 
-// Has reports whether op contains every bit set in target.
+// Has reports whether op contains any bit set in target.
 func (op Op) Has(target Op) bool {
-	return op&target == target
+	return op&target != 0
 }
 
 // String returns a human-readable representation such as "CREATE|WRITE".
