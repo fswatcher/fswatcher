@@ -24,6 +24,25 @@ func TestOpString(t *testing.T) {
 	}
 }
 
+func BenchmarkOpString(b *testing.B) {
+	tests := []Op{
+		0,
+		Create,
+		Create | Write,
+		Create | Write | Remove,
+		Create | Write | Remove | Rename,
+		All,
+	}
+
+	for _, tt := range tests {
+		b.Run(tt.String(), func(b *testing.B) {
+			for b.Loop() {
+				_ = tt.String()
+			}
+		})
+	}
+}
+
 func TestOpHas(t *testing.T) {
 	tests := []struct {
 		name   string
