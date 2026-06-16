@@ -49,7 +49,9 @@ func NewWatcher() (*Watcher, error) {
 	// Register the read end of the pipe with kqueue
 	var ev unix.Kevent_t
 	unix.SetKevent(&ev, closePipe[0], unix.EVFILT_READ, unix.EV_ADD|unix.EV_CLEAR)
-	if _, err := unix.Kevent(kq, []unix.Kevent_t{ev}, nil, nil); err != nil {
+	if _, err := ignoringEINTR2(func() (int, error) {
+		return unix.Kevent(kq, []unix.Kevent_t{ev}, nil, nil)
+	}); err != nil {
 		unix.Close(closePipe[0])
 		unix.Close(closePipe[1])
 		unix.Close(kq)
@@ -89,11 +91,15 @@ func (w *Watcher) handleEvents(events []unix.Kevent_t) bool {
 
 func (w *Watcher) stopReadLoop() {
 	// Signal readLoop by writing to the pipe
-	unix.Write(w.closePipe[1], []byte{0})
+	ignoringEINTR2(func() (int, error) {
+		return unix.Write(w.closePipe[1], []byte{0})
+	})
 	unix.Close(w.closePipe[1])
 }
 
 func (w *Watcher) closeKq() error {
 	unix.Close(w.closePipe[0])
-	return unix.Close(w.kq)
+	return suppressEINTR(func() error {
+		return unix.Close(w.kq)
+	})
 }
