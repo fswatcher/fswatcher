@@ -152,7 +152,9 @@ func (w *Watcher) Close() error {
 }
 
 func (w *Watcher) openLocked(path string, op Op, parent *kqWatch) (*kqWatch, error) {
-	fd, err := unix.Open(path, unix.O_RDONLY, 0)
+	fd, err := ignoringEINTR2(func() (int, error) {
+		return unix.Open(path, unix.O_RDONLY, 0)
+	})
 	if err != nil {
 		return nil, err
 	}
@@ -183,7 +185,9 @@ func (w *Watcher) registerLocked(ww *kqWatch) error {
 	var ev unix.Kevent_t
 	unix.SetKevent(&ev, ww.fd, unix.EVFILT_VNODE, unix.EV_ADD|unix.EV_CLEAR)
 	ev.Fflags = opToNoteFlags(ww.op, ww.isDir)
-	_, err := unix.Kevent(w.kq, []unix.Kevent_t{ev}, nil, nil)
+	_, err := ignoringEINTR2(func() (int, error) {
+		return unix.Kevent(w.kq, []unix.Kevent_t{ev}, nil, nil)
+	})
 	return err
 }
 
@@ -365,4 +369,29 @@ func opToNoteFlags(op Op, isDir bool) uint32 {
 		f |= unix.NOTE_WRITE
 	}
 	return f
+}
+
+// ignoringEINTR2 calls fn and repeats it if it returns
+// an EINTR error. This is useful for syscalls that can be interrupted by signals.
+func ignoringEINTR2[T any](fn func() (T, error)) (T, error) {
+	for {
+		v, err := fn()
+		if !errors.Is(err, unix.EINTR) {
+			return v, err
+		}
+	}
+}
+
+// suppressEINTR calls fn and returns nil if it returns an EINTR error.
+// This is useful for syscalls that can be interrupted by signals
+// where the caller does not need to distinguish between EINTR and success.
+// For example, when closing a file descriptor,
+// the fd is closed by the kernel even if the syscall is interrupted,
+// so the caller can treat EINTR as success.
+func suppressEINTR(fn func() error) error {
+	err := fn()
+	if errors.Is(err, unix.EINTR) {
+		return nil
+	}
+	return err
 }

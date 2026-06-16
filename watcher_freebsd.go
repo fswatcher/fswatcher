@@ -51,7 +51,9 @@ func NewWatcher() (*Watcher, error) {
 	if err != nil {
 		return nil, err
 	}
-	_, err = unix.Kevent(kq, []unix.Kevent_t{evCloseRegister}, nil, nil)
+	_, err = ignoringEINTR2(func() (int, error) {
+		return unix.Kevent(kq, []unix.Kevent_t{evCloseRegister}, nil, nil)
+	})
 	if err != nil {
 		unix.Close(kq)
 		return nil, err
@@ -84,10 +86,14 @@ func (w *Watcher) handleEvents(events []unix.Kevent_t) bool {
 }
 
 func (w *Watcher) stopReadLoop() error {
-	_, err := unix.Kevent(w.kq, []unix.Kevent_t{evCloseTrigger}, nil, nil)
+	_, err := ignoringEINTR2(func() (int, error) {
+		return unix.Kevent(w.kq, []unix.Kevent_t{evCloseTrigger}, nil, nil)
+	})
 	return err
 }
 
 func (w *Watcher) closeKq() error {
-	return unix.Close(w.kq)
+	return suppressEINTR(func() error {
+		return unix.Close(w.kq)
+	})
 }
