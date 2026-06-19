@@ -1,4 +1,4 @@
-//go:build freebsd || openbsd
+//go:build freebsd || openbsd || netbsd
 
 package fswatcher
 

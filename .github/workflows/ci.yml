@@ -62,3 +62,21 @@ jobs:
           run: |
             go vet ./...
             go test ./... # -race is not supported on openbsd/amd64
+
+  test-netbsd:
+    name: test (netbsd)
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+        with:
+          persist-credentials: false
+      - uses: vmactions/netbsd-vm@99816dccf75edf233ed6cd00a159e3a5b85ea373 # v1.4.0
+        with:
+          usesh: true
+          prepare: |
+            pkg_add go
+            /usr/pkg/bin/go??? version
+          run: |
+            /usr/pkg/bin/go??? vet ./...
+            /usr/pkg/bin/go??? test -race ./...
