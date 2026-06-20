@@ -75,8 +75,13 @@ jobs:
         with:
           usesh: true
           prepare: |
-            pkg_add go
-            /usr/pkg/bin/go??? version
+            # pkgsrc has no stable plain "go" package on this image, so fetch
+            # the official toolchain for netbsd/amd64 instead.
+            ver="$(ftp -o - "https://go.dev/VERSION?m=text" | head -n1)"
+            ftp -o go.tar.gz "https://go.dev/dl/${ver}.netbsd-amd64.tar.gz"
+            mkdir -p /usr/local
+            tar -C /usr/local -xzf go.tar.gz
           run: |
-            /usr/pkg/bin/go??? vet ./...
-            /usr/pkg/bin/go??? test -race ./...
+            /usr/local/go/bin/go version
+            /usr/local/go/bin/go vet ./...
+            /usr/local/go/bin/go test -race ./...
