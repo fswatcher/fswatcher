@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Added
+- OpenBSD support via the kqueue backend (#39)
+- NetBSD support via the kqueue backend (#51)
+
+### Fixed
+- BSD backends: retry system calls interrupted by a signal (`EINTR`) instead of returning spurious errors (#50)
+
 ## [0.1.0] - 2026-05-18
 
 ### Changed
