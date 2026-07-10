@@ -62,3 +62,26 @@ jobs:
           run: |
             go vet ./...
             go test ./... # -race is not supported on openbsd/amd64
+
+  test-netbsd:
+    name: test (netbsd)
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+        with:
+          persist-credentials: false
+      - uses: vmactions/netbsd-vm@99816dccf75edf233ed6cd00a159e3a5b85ea373 # v1.4.0
+        with:
+          usesh: true
+          prepare: |
+            # pkgsrc has no stable plain "go" package on this image, so fetch
+            # the official toolchain for netbsd/amd64 instead.
+            ver="$(ftp -o - "https://go.dev/VERSION?m=text" | head -n1)"
+            ftp -o go.tar.gz "https://go.dev/dl/${ver}.netbsd-amd64.tar.gz"
+            mkdir -p /usr/local
+            tar -C /usr/local -xzf go.tar.gz
+          run: |
+            /usr/local/go/bin/go version
+            /usr/local/go/bin/go vet ./...
+            /usr/local/go/bin/go test -race ./...

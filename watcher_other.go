@@ -1,4 +1,4 @@
-//go:build !linux && !windows && !darwin && !freebsd && !openbsd
+//go:build !linux && !windows && !darwin && !freebsd && !openbsd && !netbsd
 
 package fswatcher
 
