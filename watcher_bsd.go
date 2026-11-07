@@ -152,8 +152,14 @@ func (w *Watcher) Close() error {
 }
 
 func (w *Watcher) openLocked(path string, op Op, parent *kqWatch) (*kqWatch, error) {
+	// O_NONBLOCK keeps open from waiting for a writer when path is a FIFO
+	// (or a symlink to one), which anyone who can write to a watched
+	// directory can create. This runs with w.mu held, often on the read
+	// loop, so a blocking open would stall the watcher indefinitely. The
+	// flag has no effect on regular files or directories, and the fd is
+	// only used as a kevent identifier, never read from.
 	fd, err := ignoringEINTR2(func() (int, error) {
-		return unix.Open(path, unix.O_RDONLY, 0)
+		return unix.Open(path, unix.O_RDONLY|unix.O_NONBLOCK, 0)
 	})
 	if err != nil {
 		return nil, err
